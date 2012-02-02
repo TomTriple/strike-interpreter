@@ -36,6 +36,8 @@ void stack_push(struct SState *state, void *item) {
         state->head = new_head;
     }
     
+    state->iterator = NULL; 
+    
 }
 
 
@@ -49,6 +51,7 @@ void *stack_pop(struct SState *state) {
     if(state->iterator == state->first)
         state->end_seen = 1;
     
+    state->head = state->head->prev; 
     return state->iterator->item;
 }
 

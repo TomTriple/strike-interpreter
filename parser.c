@@ -37,6 +37,7 @@ FIRST(V) = id number
 #include <stdio.h>
 #include "queue.h"
 #include "stack.h"
+#include <assert.h> 
 
 #define LEFT 0
 #define RIGHT 1
@@ -159,6 +160,30 @@ void shunting_yard() {
     QHandle *output = queue_new(); 
     SHandle *ops = stack_new();
     
+    
+    /*
+    stack_push(ops, "test"); 
+    stack_push(ops, "tom");
+    stack_push(ops, "hoefer"); 
+    
+    assert(stack_is_empty(ops) == 0); 
+    assert(stack_top(ops) == "hoefer");
+    assert(stack_pop(ops) == "hoefer");
+    assert(stack_pop(ops) == "tom");
+    assert(stack_top(ops) == "test"); 
+    stack_push(ops, "a");
+    stack_push(ops, "b");    
+    assert(stack_top(ops) == "b");
+    assert(stack_pop(ops) == "b");
+    stack_pop(ops);
+    assert(stack_pop(ops) == "test");
+    assert(stack_is_empty(ops) == 1);
+    printf("tests ok"); 
+    return;      
+     */
+    
+    
+    
     /*
     while ((input = dequeue()) != NULL) {
         stack_push(output, input); 
@@ -169,21 +194,23 @@ void shunting_yard() {
     }
     return; 
     */ 
-
+    
     while ((input = queue_dequeue(expr_queue_state)) != NULL) { 
         switch (input->tok_type) {
             case TOK_BINOP:
                 
                 top = stack_top(ops);
                 if(top == NULL) {
-                    stack_push(ops, input); 
+                    stack_push(ops, input);
                     continue;
-                } 
-                
-                while((assoc_for_binop(input) == LEFT && prec_for_binop(input) <= prec_for_binop(top)) || 
-                (assoc_for_binop(input) == RIGHT && prec_for_binop(input) < prec_for_binop(top))) {
-                    queue_enqueue(output, stack_pop(ops));
                 }
+                while((assoc_for_binop(input) == LEFT && prec_for_binop(input) <= prec_for_binop(top)) || 
+                      (assoc_for_binop(input) == RIGHT && prec_for_binop(input) < prec_for_binop(top))) {
+                    top = stack_pop(ops);
+                    queue_enqueue(output, top); 
+                    if(stack_top(ops) == NULL)
+                        break; 
+                } 
                 stack_push(ops, input); 
                 
             break;
@@ -196,16 +223,37 @@ void shunting_yard() {
         }
     }
     
-    printf("alles ok...\n"); 
+    printf("alles ok...\n");
 
+    // add remaining operators from the stack to the output
     Token *remaining_binop;
-    while (stack_is_empty(ops) == 0 && (remaining_binop = stack_pop(ops)) != NULL) {
+    while ((remaining_binop = stack_pop(ops)) != NULL) {
         queue_enqueue(output, remaining_binop); 
     } 
-    
+
+    // rpn representation is finished here:    
     queue_test(output, stack_test_callback);
     
+    // convert rpn to ast:
     
+    return; 
+    
+    SHandle *result = stack_new();
+    struct NExpr *expr;
+    Token *token, *t1, *t2;
+    
+    while ((token = queue_dequeue(output)) != NULL) {
+        if(token->tok_type == TOK_BINOP) { 
+            expr = malloc(sizeof(struct NExpr));
+            expr->value_right = stack_pop(result);
+            expr->value_left = stack_pop(result);
+            expr->operator = token;
+            
+        } else {
+            stack_push(result, token);
+        }
+    }
+
 }
 
 
