@@ -7,6 +7,7 @@
 
 
 /*
+ 
 http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm
  
  
@@ -34,6 +35,11 @@ FIRST(V) = id number
 #include "scanner/scanner.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include "queue.h"
+#include "stack.h"
+
+#define LEFT 0
+#define RIGHT 1
 
 void syntax_error(int tok);
 Token *consume_token(void); 
@@ -48,10 +54,40 @@ void parse_p(void);
 void parse_b(void); 
 void parse_u(void);
 void parse_v(void); 
+void shunting_yard(void); 
+short prec_for_binop(Token *token); 
+short assoc_for_binop(Token *token); 
+void stack_test_callback(void *it); 
 
 
 
+// the current lookahead-terminal
 static Token *lookahead; 
+
+
+// nodes for the AST
+
+struct NExpr {
+    Token *operator; 
+    struct NExpr *expr_left;
+    struct NExpr *expr_right;
+    Token *value_left;
+    Token *value_right; 
+};
+
+struct NAssignment {
+    Token *lvalue;
+    struct NExpr *rvalue;
+};
+
+
+// root-node of the program
+struct NAssignment root;
+
+// state of the queue which is used as input for shunting yard
+QHandle *expr_queue_state;
+
+
 
 
 int main(int argc, char **args) { 
@@ -67,8 +103,116 @@ int main(int argc, char **args) {
     parse_start();
     printf("syntax ok\n");
 
-    return EXIT_SUCCESS; 
+    return EXIT_SUCCESS;
 
+}
+
+
+short prec_for_binop(Token *token) {
+    
+    short result;
+    
+    switch (token->lexem_one[0]) {
+        case '-':
+        case '+':
+            result = 10;
+        break;
+        case '*':
+        case '/':
+            result = 20;
+        break; 
+        default:
+            printf("fehler, prec_for_binop: %c\n", token->lexem_one[0]);
+    }
+    
+    return result; 
+}
+
+
+short assoc_for_binop(Token *token) {
+
+    short result;
+    
+    switch (token->lexem_one[0]) {
+        case '-':
+        case '+':
+        case '/':
+        case '*':            
+            result = LEFT;
+        break;
+        case '^':
+            result = RIGHT;
+        break; 
+        default:
+            printf("fehler, assoc_for_binop\n"); 
+    }
+    
+    return result; 
+
+}
+
+
+void shunting_yard() {
+    
+    Token *input;
+    Token *top; 
+    QHandle *output = queue_new(); 
+    SHandle *ops = stack_new();
+    
+    /*
+    while ((input = dequeue()) != NULL) {
+        stack_push(output, input); 
+    }
+    
+    while ((top = stack_pop(output)) != NULL) {
+        printf("%s", top->lexem_one); 
+    }
+    return; 
+    */ 
+
+    while ((input = queue_dequeue(expr_queue_state)) != NULL) { 
+        switch (input->tok_type) {
+            case TOK_BINOP:
+                
+                top = stack_top(ops);
+                if(top == NULL) {
+                    stack_push(ops, input); 
+                    continue;
+                } 
+                
+                while((assoc_for_binop(input) == LEFT && prec_for_binop(input) <= prec_for_binop(top)) || 
+                (assoc_for_binop(input) == RIGHT && prec_for_binop(input) < prec_for_binop(top))) {
+                    queue_enqueue(output, stack_pop(ops));
+                }
+                stack_push(ops, input); 
+                
+            break;
+            case TOK_NUMBER:
+            case TOK_ID: 
+                queue_enqueue(output, input); 
+            break;
+            default:
+                printf("fehler shunting_yard...");
+        }
+    }
+    
+    printf("alles ok...\n"); 
+
+    Token *remaining_binop;
+    while (stack_is_empty(ops) == 0 && (remaining_binop = stack_pop(ops)) != NULL) {
+        queue_enqueue(output, remaining_binop); 
+    } 
+    
+    queue_test(output, stack_test_callback);
+    
+    
+}
+
+
+void stack_test_callback(void *it) {
+
+    Token *token = it;
+    printf("token: %s, lexem: %s\n", tok_type_tostring(token->tok_type), token->lexem_one); 
 }
 
 
@@ -90,9 +234,12 @@ void parse_program() {
 
     switch (lookahead->tok_type) {
         case TOK_ID:
+            root.lvalue = lookahead;
             match(TOK_ID); 
             match(TOK_EQ); 
+            expr_queue_state = queue_new(); 
             parse_expr(); 
+            shunting_yard();
             match(TOK_SEMICOLON); 
         break;
         default:
@@ -156,8 +303,10 @@ void parse_p() {
             parse_v();
         break;
         case TOK_PAREN_OPEN:
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_PAREN_OPEN);
             parse_expr();
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_PAREN_CLOSE); 
         break;
         case TOK_MINUS:
@@ -176,6 +325,7 @@ void parse_b() {
 
     switch (lookahead->tok_type) {
         case TOK_BINOP:
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_BINOP);
         break;
         default:
@@ -189,6 +339,7 @@ void parse_b() {
 void parse_u() {
     switch (lookahead->tok_type) {
         case TOK_MINUS:
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_MINUS);
         break;
         default:
@@ -202,9 +353,11 @@ void parse_v() {
 
     switch (lookahead->tok_type) {
         case TOK_NUMBER:
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_NUMBER);
         break;
         case TOK_ID:
+            queue_enqueue(expr_queue_state, lookahead); 
             match(TOK_ID);
         break;
         default:
@@ -249,134 +402,4 @@ void syntax_error(int token_expected) {
 }
 
 
-
-
-/*
-#include <stdlib.h> 
-#include <string.h>
-#include <stdio.h>
-#include "hash_table.h"
-#include "scanner.h" 
-
-int main(int argc, char *args[]) {
-
-    file_init(); 
-    char *word;
-    printf("starte...\n"); 
-    while ((word = next_word()) != NULL) {
-        struct bucket *result = lookup(word);
-        if(result == NULL) {
-            result = (struct bucket *) malloc(sizeof(struct bucket));
-        }
-    }
-    file_close(); 
-    
-    
-    return 0; 
-    
-    char key[10]; 
-
-    add("ro", "hier gehts um die stadt rosenheim");
-    add("grhh", "inhalt für grossholzhausen"); 
-    
-    while (1) {
-        printf("DB-Abfrage: \n"); 
-        int result = scanf("%s", key); 
-        if(result == 0) {
-            printf("Falsches Format!\n");
-        } else {
-            struct bucket *result = lookup(key);  
-            if(result == NULL) 
-                printf("no result\n"); 
-            else
-                printf("Value for %s: %s\n", key, result->value);
-        }
-    }
-
-}
- */
- 
-
-
-
-/*
- 
- 
-#include <stdlib.h>
-#include <stdio.h>
-#include "array_list.h"
-#include <string.h>
-
-
-int main(int argc, const char *argv[]) {
-    
-    while (1) {
-        
-        char word[100]; 
-        int count; 
-        
-        int result = scanf("%s %d", word, &count);
-        if(result == 0) {
-            fflush(stdin); 
-            continue; 
-        }
-        if (strcmp(word, "info") == 0) {
-            ;
-        } else {
-            char *word2 = strdup(word); 
-            list_insert(word2, count);
-        }
-    }
-}
- 
- */
-
-
-
-
-/*
-#include <stdio.h>
-#include "bintree.h"
-
-
-void success(char *name) {
-    printf("found: %s \n", name);
-}
-
-void error(char *bla) {
-    printf("found nothing :(");
-}
-
-typedef void (*Callback)(char *param);
-
-int main (int argc, const char * argv[]) {
-    
-    printf("starte...\n"); 
-    Callback funcs[2] = { success, error }; 
-    
-    Ort ltk = { 8, "leutkirch" }; 
-    Ort rbl = { 10, "raubling" };    
-    Ort ro = { 6, "rosenheim" };
-    Ort low = { 5, "low" };
-    Ort lower = { 1, "lower" };
-    
-    
-    printf("inserting...\n");
-    insert(&ltk); 
-    insert(&rbl);
-    insert(&ro);
-    insert(&low);
-    insert(&lower);
-    insert_by_properties(12, "new york"); 
-    printf("searching...\n"); 
-    
-    Ort *result = find(12);
-    if (result == NULL) {
-        (*funcs[0])(NULL);
-    } else {
-        (*funcs[0])(result->name);
-    }
-    return 0;
-}
-*/
  

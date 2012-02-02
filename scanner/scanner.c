@@ -124,12 +124,16 @@ Token *scanner() {
                 return token; 
                 break;
             case SC_PAREN_OPEN:
+                concat_to_lexem(); 
+                token->lexem_one = lexem;
                 token->tok_type = TOK_PAREN_OPEN;
                 token->line = line;
                 token->row = row; 
                 return token;
             break;
             case SC_PAREN_CLOSE:
+                concat_to_lexem(); 
+                token->lexem_one = lexem;                
                 token->tok_type = TOK_PAREN_CLOSE;
                 token->line = line;
                 token->row = row; 
