@@ -4,7 +4,7 @@ struct QElement {
 }; 
 
 struct QState {
-    struct QElement *head, *last, *iterator;
+    struct QElement *head, *last, *traversal; 
 }; 
 
 typedef struct QState QHandle;

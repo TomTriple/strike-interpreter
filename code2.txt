@@ -1,1 +1,1 @@
-testVariable = 3 - 4 + 5;
+testVariable = 1 * 2 + 3 / 4;

@@ -1,12 +1,11 @@
 struct SElement {
     void *item;
-    struct SElement *prev;
+    void *next; 
 };
 
 struct SState {
-    unsigned end_seen;
-    struct SElement *head, *iterator, *first; 
-}; 
+    void *head; 
+};
 
 typedef struct SState SHandle;
 

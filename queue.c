@@ -25,25 +25,25 @@ struct QState *queue_new() {
 
 void queue_enqueue(struct QState *state, void *item) {
     
-    if(state->head == NULL) {
-        state->last = QE_alloc(); 
-        state->last->item = item;
-        state->head = state->last;
+    struct QElement *it = QE_alloc(); 
+    if(state->head == NULL) { 
+        it->item = item; 
+        state->traversal = state->head = state->last = it;
     } else {
-        struct QElement *new_last = QE_alloc(); 
-        new_last->item = item;
-        state->last->next = new_last; 
-        state->last = new_last; 
+        it->item = item; 
+        state->last->next = it; 
+        state->last = it;
     }
     
 }
 
 
 void *queue_dequeue(struct QState *state) { 
-    
-    state->iterator = state->iterator == NULL ? state->head : state->iterator->next;
-    return state->iterator == NULL ? NULL : state->iterator->item; 
-    
+    struct QElement *it = state->traversal; 
+    if(it == NULL)
+        return NULL;
+    state->traversal = state->traversal->next; 
+    return it->item; 
 }
 
 
