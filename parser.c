@@ -161,7 +161,7 @@ void shunting_yard() {
     SHandle *ops = stack_new();
     
     
-    /*
+    
     stack_push(ops, "test"); 
     stack_push(ops, "tom");
     stack_push(ops, "hoefer"); 
@@ -172,7 +172,7 @@ void shunting_yard() {
     assert(stack_pop(ops) == "tom");
     assert(stack_top(ops) == "test"); 
     stack_push(ops, "a");
-    stack_push(ops, "b");    
+    stack_push(ops, "b");
     assert(stack_top(ops) == "b");
     assert(stack_pop(ops) == "b");
     stack_pop(ops);
@@ -180,7 +180,7 @@ void shunting_yard() {
     assert(stack_is_empty(ops) == 1);
     printf("tests ok"); 
     return;      
-     */
+     
     
     
     
@@ -226,6 +226,10 @@ void shunting_yard() {
     printf("alles ok...\n");
 
     // add remaining operators from the stack to the output
+    // TODO: stack refactoren, testsuite ausbauen
+    // TODO: queue testsuite und ggf refactoren 
+    // stack_pop() liefert hier NULL obwohl noch der letzte operator sich auf dem Stack befindet 
+    
     Token *remaining_binop;
     while ((remaining_binop = stack_pop(ops)) != NULL) {
         queue_enqueue(output, remaining_binop); 
