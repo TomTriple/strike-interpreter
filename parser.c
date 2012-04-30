@@ -4,10 +4,9 @@
 //
 //  Created by tom hoefer on 25.01.12.
 //  Copyright (c) 2012 __MyCompanyName__. All rights reserved.
-
-
 /*
- 
+
+
 http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm
  
  
@@ -236,7 +235,7 @@ void shunting_yard() {
             break;
             case TOK_NUMBER:
             case TOK_ID: 
-                queue_enqueue(output, input); 
+                queue_enqueue(output, input);
             break;
             default:
                 printf("fehler shunting_yard...");

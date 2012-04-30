@@ -24,7 +24,7 @@ struct QState *queue_new() {
 
 
 void queue_enqueue(struct QState *state, void *item) {
-    
+
     struct QElement *it = QE_alloc(); 
     if(state->head == NULL) { 
         it->item = item; 
@@ -34,7 +34,7 @@ void queue_enqueue(struct QState *state, void *item) {
         state->last->next = it; 
         state->last = it;
     }
-    
+
 }
 
 
