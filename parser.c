@@ -42,6 +42,11 @@ FIRST(V) = id number
 #define LEFT 0
 #define RIGHT 1
 
+struct Binary {
+    short sentinel;
+    Token *token; 
+}; 
+
 void syntax_error(int tok);
 Token *consume_token(void); 
 void match(int token); 
@@ -56,9 +61,18 @@ void parse_b(void);
 void parse_u(void);
 void parse_v(void); 
 void shunting_yard(void); 
-short prec_for_binop(Token *token); 
-short assoc_for_binop(Token *token); 
+short prec_for_binop(struct Binary *binary);
+short assoc_for_binop(struct Binary *binary); 
 void stack_test_callback(void *it); 
+struct NExpr *make_leaf(Token *tok); 
+struct NExpr *make_node(struct Binary *binary, struct NExpr *e0, struct NExpr *e1); 
+void push_operator(struct Binary *binary, SHandle *operators, SHandle *operands); 
+void pop_operator(SHandle *operators, SHandle *operands);
+struct Binary *make_binary(short is_sentinel, Token *token); 
+int interpret(struct NExpr *expr); 
+void debug_expr_ast(struct NExpr *expr);
+
+
 
 
 
@@ -69,17 +83,18 @@ static Token *lookahead;
 // nodes for the AST
 
 struct NExpr {
-    Token *operator; 
-    struct NExpr *expr_left;
-    struct NExpr *expr_right;
-    Token *value_left;
-    Token *value_right; 
+    struct Binary *operator; 
+    struct NExpr *left;
+    struct NExpr *right;
+    Token *value;
 };
 
 struct NAssignment {
     Token *lvalue;
     struct NExpr *rvalue;
 };
+
+
 
 
 // root-node of the program
@@ -104,16 +119,19 @@ int main(int argc, char **args) {
     parse_start();
     printf("syntax ok\n");
 
-    return EXIT_SUCCESS;
+    return EXIT_SUCCESS; 
 
 }
 
 
-short prec_for_binop(Token *token) {
+short prec_for_binop(struct Binary *binary) {
     
     short result;
     
-    switch (token->lexem_one[0]) {
+    if(binary->sentinel == 1)
+        return 0;
+    
+    switch (binary->token->lexem_one[0]) {
         case '-':
         case '+':
             result = 10;
@@ -123,18 +141,21 @@ short prec_for_binop(Token *token) {
             result = 20;
         break; 
         default:
-            printf("fehler, prec_for_binop: %c\n", token->lexem_one[0]);
+            printf("fehler, prec_for_binop: %c\n", binary->token->lexem_one[0]);
     }
     
     return result; 
 }
 
 
-short assoc_for_binop(Token *token) {
+short assoc_for_binop(struct Binary *binary) {
 
-    short result;
+    short result; 
     
-    switch (token->lexem_one[0]) {
+    if(binary->sentinel == 1)
+        return LEFT;
+    
+    switch (binary->token->lexem_one[0]) {
         case '-':
         case '+':
         case '/':
@@ -153,12 +174,9 @@ short assoc_for_binop(Token *token) {
 }
 
 
+
+
 void shunting_yard() {
-    
-    Token *input;
-    Token *top; 
-    QHandle *output = queue_new(); 
-    SHandle *ops = stack_new();
 
     /*
     // TEST-SUITE, Queue 
@@ -215,64 +233,115 @@ void shunting_yard() {
     printf("stack ok\n"); 
     return; 
     */
-     
 
+
+    Token *input;
+    SHandle *operators = stack_new();
+    SHandle *operands = stack_new();
+
+    stack_push(operators, make_binary(1, NULL));
+    input = queue_dequeue(expr_queue_state); 
+    stack_push(operands, make_leaf(input));
     
-    while ((input = queue_dequeue(expr_queue_state)) != NULL) { 
-        switch (input->tok_type) {
-            case TOK_BINOP:
-
-                top = stack_top(ops);
-                if(top == NULL) {
-                    stack_push(ops, input);
-                    continue;
-                }
-                while((assoc_for_binop(input) == LEFT && prec_for_binop(input) <= prec_for_binop(top)) || 
-                      (assoc_for_binop(input) == RIGHT && prec_for_binop(input) < prec_for_binop(top))) {
-                    queue_enqueue(output, stack_pop(ops)); 
-                    top = stack_top(ops);
-                    if(top == NULL) 
-                        break; 
-                } 
-                stack_push(ops, input); 
-                
-            break;
-            case TOK_NUMBER:
-            case TOK_ID: 
-                queue_enqueue(output, input);
-            break;
-            default:
-                printf("fehler shunting_yard...");
+    while((input = queue_dequeue(expr_queue_state)) != NULL) {         
+        if(input->tok_type == TOK_BINOP) {
+            push_operator(make_binary(0, input), operators, operands); 
+            input = queue_dequeue(expr_queue_state); 
+            stack_push(operands, make_leaf(input)); 
         }
     }
     
-    Token *remaining_binop;
-    while ((remaining_binop = stack_pop(ops)) != NULL) {
-        queue_enqueue(output, remaining_binop); 
-    } 
-    // rpn representation is finished here:    
-    queue_test(output, stack_test_callback);
-    
-    return;
-    
-    // convert rpn to ast:    
-    SHandle *result = stack_new();
-    struct NExpr *expr;
-    Token *token, *t1, *t2;
-    
-    while ((token = queue_dequeue(output)) != NULL) {
-        if(token->tok_type == TOK_BINOP) { 
-            expr = malloc(sizeof(struct NExpr));
-            expr->value_right = stack_pop(result);
-            expr->value_left = stack_pop(result);
-            expr->operator = token;
-            
-        } else {
-            stack_push(result, token);
-        }
+    struct Binary *top;
+    while((top = stack_top(operators)) != NULL && top->sentinel != 1) { 
+        pop_operator(operators, operands); 
     }
-
+    
+    struct NExpr *tos = stack_top(operands); 
+    printf("result: %i", interpret(tos));
+    // debug_expr_ast(tos); 
+    
 }
+
+
+struct Binary *make_binary(short is_sentinel, Token *token) {
+    struct Binary *sentinel = (struct Binary *) malloc(sizeof(struct Binary)); 
+    if(sentinel == NULL) {
+        printf("no memory available"); 
+    }
+    sentinel->sentinel = is_sentinel;
+    sentinel->token = token;
+    return sentinel; 
+}
+
+
+
+int interpret(struct NExpr *expr) {
+    if(expr->value != NULL) {
+        return atoi(expr->value->lexem_one); 
+    } else {
+        switch (expr->operator->token->lexem_one[0]) {
+            case '+':
+                return interpret(expr->left) + interpret(expr->right); 
+                break;
+            case '-':
+                return interpret(expr->left) - interpret(expr->right); 
+                break;
+            case '*':
+                return interpret(expr->left) * interpret(expr->right); 
+                break;
+            case '/':
+                return interpret(expr->left) / interpret(expr->right); 
+                break;
+        }
+    }
+}
+
+
+void debug_expr_ast(struct NExpr *expr) {
+    if(expr->value != NULL) {
+        printf(expr->value->lexem_one); 
+    } else {
+        printf("(");
+        debug_expr_ast(expr->left);
+        printf(" %s ", expr->operator->token->lexem_one);
+        debug_expr_ast(expr->right); 
+        printf(")");
+    }
+}
+
+
+struct NExpr *make_leaf(Token *tok) {
+    struct NExpr *leaf = (struct NExpr *) malloc(sizeof(struct NExpr));  
+    leaf->value = tok; 
+    return leaf; 
+}
+
+
+struct NExpr *make_node(struct Binary *binary, struct NExpr *e0, struct NExpr *e1) {
+    struct NExpr *node = (struct NExpr *) malloc(sizeof(struct NExpr));
+    node->left = e0;
+    node->right = e1; 
+    node->operator = binary;
+    return node;
+}
+
+    
+void push_operator(struct Binary *binary, SHandle *operators, SHandle *operands) {
+    struct Binary *top; 
+    while (prec_for_binop((top = stack_top(operators))) > prec_for_binop(binary) || (assoc_for_binop(top) == LEFT && prec_for_binop(top) == prec_for_binop(binary))) {
+        pop_operator(operators, operands); 
+    }
+    stack_push(operators, binary);
+}
+
+
+void pop_operator(SHandle *operators, SHandle *operands) {
+    struct NExpr *expr1 = stack_pop(operands); 
+    struct NExpr *expr2 = stack_pop(operands); 
+    stack_push(operands, make_node(stack_pop(operators), expr2, expr1)); 
+}
+
+
 
 
 void stack_test_callback(void *it) {
