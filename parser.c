@@ -16,7 +16,7 @@ Informal grammar:
 S ::= STMT_LIST$
 STMT_LIST ::= STMT STMT_LIST | EPSILON 
 STMT ::= id = E;
-STMT ::= p EX;
+STMT ::= p EX; | p "";
 STMT ::= is EX ( stmt_list )
 
 EX ::= E cmp E 
@@ -75,6 +75,7 @@ struct NExpr {
     struct NExpr *left;
     struct NExpr *right;
     Token *value;
+    char *symkey;
 };
 struct NAssignment {
     Token *lvalue;
@@ -131,7 +132,7 @@ struct NExpr *shunting_yard(void);
 short prec_for_binop(struct Binary *binary);
 short assoc_for_binop(struct Binary *binary); 
 void stack_test_callback(void *it); 
-struct NExpr *make_leaf(Token *tok); 
+struct NExpr *make_leaf(Token *tok, char *symkey); 
 struct NExpr *make_node(struct Binary *binary, struct NExpr *e0, struct NExpr *e1); 
 void push_operator(struct Binary *binary, SHandle *operators, SHandle *operands); 
 void pop_operator(SHandle *operators, SHandle *operands);
@@ -294,13 +295,19 @@ struct NExpr *shunting_yard() {
 
     stack_push(operators, make_binary(1, NULL)); // == sentinel  
     input = queue_dequeue(expr_queue_state); 
-    stack_push(operands, make_leaf(input));
+    if(input->tok_type == TOK_NUMBER)
+        stack_push(operands, make_leaf(input, NULL));
+    else if(input->tok_type == TOK_ID)
+        stack_push(operands, make_leaf(NULL, input->lexem_one));
     
     while((input = queue_dequeue(expr_queue_state)) != NULL) {         
         if(input->tok_type == TOK_BINOP) {
             push_operator(make_binary(0, input), operators, operands); 
             input = queue_dequeue(expr_queue_state); 
-            stack_push(operands, make_leaf(input)); 
+            if(input->tok_type == TOK_NUMBER)
+                stack_push(operands, make_leaf(input, NULL)); 
+            else if(input->tok_type == TOK_ID)
+                stack_push(operands, make_leaf(NULL, input->lexem_one));
         }
     }
     
@@ -332,6 +339,9 @@ struct Binary *make_binary(short is_sentinel, Token *token) {
 int interpret_expr(struct NExpr *expr) {
     if(expr->value != NULL) {
         return atoi(expr->value->lexem_one); 
+    } else if (expr->symkey != NULL) {
+        int value = hash_lookup(symtab, expr->symkey);
+        return value;
     } else {
         switch (expr->operator->token->lexem_one[0]) {
             case '+':
@@ -364,12 +374,14 @@ void debug_expr_ast(struct NExpr *expr) {
 }
 
 
-struct NExpr *make_leaf(Token *tok) {
+struct NExpr *make_leaf(Token *tok, char *symkey) {
     struct NExpr *leaf = (struct NExpr *) malloc(sizeof(struct NExpr));  
-    if(NULL == leaf) {
-        printf("mem error make_leaf");
+    if(NULL != tok) {
+        leaf->value = tok; 
+    } else if(NULL != symkey) {
+        leaf->symkey = symkey; 
     }
-    leaf->value = tok; 
+    
     return leaf; 
 }
 

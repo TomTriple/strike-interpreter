@@ -1,8 +1,12 @@
-name = 23 + 5; 
-p 2 * 9 - 9 * 2 + 56 * 2;
+name = 7; 
+test = 2;
+result = name + name * test - 11;
 
-is 2 == 2 (
-    is 4 == 4 (
-        p 2 * 8 + 4;
+is result == 10 (
+    abc = 11;
+    is abc == 11 (
+        p abc + result;
     )
 )
+
+
