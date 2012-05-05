@@ -1,8 +1,6 @@
 //
 //  expr_linked_list.c
-//  BinTree
 //
-//  Created by tom hoefer on 01.02.12.
 //  Copyright (c) 2012 __MyCompanyName__. All rights reserved.
 //
 

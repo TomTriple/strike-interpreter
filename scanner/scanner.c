@@ -8,7 +8,7 @@
 
 enum ScannerStates {
     SC_START, SC_IN_ID, SC_ID_END, SC_EQ_END, SC_BINOP_END, SC_IN_NUMBER, SC_NUMBER_END, 
-    SC_SEMICOLON_END, SC_TERMINATE, SC_PAREN_OPEN, SC_PAREN_CLOSE
+    SC_SEMICOLON_END, SC_TERMINATE, SC_PAREN_OPEN, SC_PAREN_CLOSE, SC_IN_STR, SC_END_STR
 };
 
 typedef unsigned State;
@@ -31,7 +31,7 @@ static int row;
 Token *scanner() {
     
     c = next_char(); 
-    lexem = (char *)malloc(sizeof(char)); 
+    lexem = calloc(sizeof(char), 100); 
     State state = SC_START; 
     Token *token = (Token *) malloc(sizeof(Token)); 
     
@@ -44,10 +44,12 @@ Token *scanner() {
             case SC_START:
                 if(isblank(c)) {
                     next_char();
+                } else if(c == '"') {
+                    state = SC_IN_STR;
                 } else if(c == ';') {
                     concat_to_lexem(); 
                     state = SC_SEMICOLON_END;
-                } else if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+                } else if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '>') {
                     concat_to_lexem(); 
                     state = SC_IN_ID; 
                 } else if(c == '=') {
@@ -67,17 +69,25 @@ Token *scanner() {
                     state = SC_PAREN_CLOSE;
                 }
                 break;
+            case SC_IN_STR:
+                next_char();
+                if(c != '"') {
+                    concat_to_lexem();
+                } else {
+                    state = SC_END_STR;
+                }
+            break;
             case SC_IN_ID: 
                 if(c == ' ' || c == '=' || c == ';') {
                     ungetc(c, fp); 
                     state = SC_ID_END;
-                } else if(isalpha(c)) { 
+                } else if(isalpha(c) || c == '>') { 
                     concat_to_lexem(); 
                     next_char();
                 }
                 break; 
             case SC_ID_END: 
-                if(strcmp(lexem, "pp") == 0) {
+                if(strcmp(lexem, ">>>") == 0) {
                     token->tok_type = TOK_P; 
                     token->lexem_one = lexem; 
                     token->line = line; 
@@ -101,15 +111,21 @@ Token *scanner() {
                     token->tok_type = TOK_CMP; 
                     token->line = line; 
                     token->row = row; 
-                    return token;                     
+                    return token;
                 } else {
                     token->tok_type = TOK_EQ; 
                     token->line = line; 
                     token->row = row; 
                     return token;                 
                 }
-
-            break; 
+            break;
+            case SC_END_STR:
+                token->lexem_one = lexem; 
+                token->tok_type = TOK_STRING; 
+                token->line = line; 
+                token->row = row; 
+                return token; 
+            break;
             case SC_BINOP_END:
                 token->tok_type = TOK_BINOP; 
                 token->lexem_one = lexem; 
@@ -215,7 +231,10 @@ char *tok_type_tostring(int tok_type) {
             break;      
         case TOK_CMP:
             result =  "TOK_CMP";
-            break;              
+            break; 
+        case TOK_STRING:
+            result = "TOK_STRING";
+            break;
         default:
             printf("error, no token description available");
     }

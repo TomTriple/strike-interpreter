@@ -1,8 +1,6 @@
 //
 //  hash_table.c
-//  BinTree
 //
-//  Created by tom hoefer on 27.01.12.
 //  Copyright (c) 2012 __MyCompanyName__. All rights reserved.
 //
 
@@ -32,9 +30,6 @@ void hash_add(HState *state, char *key, void *value) {
         bucket->key = strdup(key); 
         bucket->value = value; 
         
-        // nötig, falls zwei keys den gleichen hash-wert haben aber 
-        // lookup dennoch NULL liefert da ja zusätzlich auch der suchkey
-        // mit einem bucket-key übereinstimmen muss. 
         bucket->next = state->table[hash_value];
         state->table[hash_value] = bucket; 
     } else {

@@ -1,8 +1,6 @@
 //
 //  main.c
-//  BinTree
 //
-//  Created by tom hoefer on 25.01.12.
 //  Copyright (c) 2012 __MyCompanyName__. All rights reserved.
 /*
 
@@ -12,13 +10,14 @@ http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm
 
 
 Informal grammar:
-+++++++++++++ 
++++++++++++++++++
 S ::= STMT_LIST$
 STMT_LIST ::= STMT STMT_LIST | EPSILON 
-STMT ::= id = E;
-STMT ::= p EX; | p "";
+STMT ::= id = E | id = STRING;
+STMT ::= p EX; | p STRING;
 STMT ::= is EX ( stmt_list )
-
+STRING ::= ""
+ 
 EX ::= E cmp E 
  
 
@@ -92,10 +91,12 @@ typedef struct {
 typedef struct {
     Token *lvalue;
     struct NExpr *expr; 
+    char *string;
 } NodeAssign;
 
 typedef struct {
     struct NExpr *expr;
+    char *string;
 } NodePrint;
 
 typedef struct {
@@ -140,6 +141,7 @@ struct Binary *make_binary(short is_sentinel, Token *token);
 int interpret_expr(struct NExpr *expr); 
 void debug_expr_ast(struct NExpr *expr);
 void interpret_node(Node *node); 
+char * string_replace(char *search, char *replace, char *string);
 
 
 
@@ -152,14 +154,13 @@ QHandle *expr_queue_state;
 // symbol table 
 HState *symtab;
 
-
 int main(int argc, char **args) { 
-    
-    char *source = "/Users/tom/tom/NetBeansProjects/xcode/C-Progr/BinTree/BinTree/code2.txt";
+        
+    char *source = "/Users/tom/tom/NetBeansProjects/xcode/C-Progr/BinTree/BinTree/example.strike";
     
     init_scanner(source);
     
-    //test_tokens();
+    // test_tokens(); 
     // exit(0); 
     
     NodeStmtList *stmt_list = (NodeStmtList *) malloc(sizeof(NodeStmtList));
@@ -440,14 +441,40 @@ void interpret_node(Node *node) {
         break;
         case AST_PRINT:
             print = (NodePrint *) node->ref;
-            printf("ast_print: %i \n", interpret_expr(print->expr)); 
+            if(print->expr != NULL) {
+                printf("%i\n", interpret_expr(print->expr)); 
+            } else {
+                char *mystring = print->string;
+                char *result = malloc(sizeof(char) * strlen(mystring));
+                char *final = result;
+                while (*mystring != '\0') {
+                    if(*mystring == '#' && *++mystring == '{') {
+                        while (*++mystring != '}') {
+                            *result++ = *mystring;
+                        }
+                        *result = '\0';
+                        break; 
+                    }
+                    mystring++;
+                }
+                char *string = hash_lookup(symtab, final);
+                char *out = calloc(sizeof(char), strlen(final) + 3);
+                strcat(out, "#{");
+                strcat(out, final);
+                strcat(out, "}");
+                printf("%s\n", string_replace(out, string, print->string)); 
+            } 
         break;
         case AST_ASSIGNMENT:
             assign = node->ref;
-            // hier rumgecaste besser verstehen!!!!!
-            hash_add(symtab, assign->lvalue->lexem_one, interpret_expr(assign->expr));
-            int result = hash_lookup(symtab, assign->lvalue->lexem_one);
-            printf("ast_assignment: %i \n", result);
+            if(assign->expr != NULL) {
+                hash_add(symtab, assign->lvalue->lexem_one, interpret_expr(assign->expr));
+                int result = hash_lookup(symtab, assign->lvalue->lexem_one);
+                //printf("ast_assignment (expr): %i \n", result);
+            } else {
+                hash_add(symtab, assign->lvalue->lexem_one, assign->string);
+                //printf("ast_assignment (string): %s \n", assign->string);
+            }
         break; 
         case AST_CMP:
             cmp = node->ref; 
@@ -545,15 +572,25 @@ void parse_print(NodeStmtList *stmt_list) {
     switch (lookahead->tok_type) {
         case TOK_P:
             match(TOK_P);
-            expr_queue_state = queue_new(); 
-            parse_expr(); 
-            struct NExpr *expr = shunting_yard(); 
-            match(TOK_SEMICOLON); 
-            NodePrint *node_print = (NodePrint *) malloc(sizeof(NodePrint)); 
-            node_print->expr = expr; 
-            Node *node = generate_node(AST_PRINT, node_print);
-            queue_enqueue(stmt_list->stmts, node); 
-            break; 
+            if(lookahead->tok_type == TOK_STRING) {
+                char *string = lookahead->lexem_one; 
+                match(TOK_STRING);
+                NodePrint *node_print = malloc(sizeof(NodePrint)); 
+                node_print->string = string; 
+                Node *node = generate_node(AST_PRINT, node_print); 
+                queue_enqueue(stmt_list->stmts, node);
+                match(TOK_SEMICOLON); 
+            } else {
+                expr_queue_state = queue_new(); 
+                parse_expr(); 
+                struct NExpr *expr = shunting_yard(); 
+                match(TOK_SEMICOLON); 
+                NodePrint *node_print = (NodePrint *) malloc(sizeof(NodePrint)); 
+                node_print->expr = expr; 
+                Node *node = generate_node(AST_PRINT, node_print);
+                queue_enqueue(stmt_list->stmts, node);             
+            }
+            break;             
         default:
             break;
     }
@@ -567,16 +604,29 @@ void parse_assignment(NodeStmtList *stmt_list) {
         case TOK_ID:
             lvalue = lookahead; 
             match(TOK_ID); 
-            match(TOK_EQ); 
-            expr_queue_state = queue_new(); 
-            parse_expr(); 
-            struct NExpr *expr = shunting_yard();
-            match(TOK_SEMICOLON);
-            NodeAssign *node_assign = malloc(sizeof(NodeAssign));
-            node_assign->expr = expr;
-            node_assign->lvalue = lvalue;
-            Node *node = generate_node(AST_ASSIGNMENT, node_assign);
-            queue_enqueue(stmt_list->stmts, node);  
+            match(TOK_EQ);
+            
+            if(lookahead->tok_type == TOK_STRING) {
+                char *string = lookahead->lexem_one;
+                match(TOK_STRING); 
+                NodeAssign *node_assign = malloc(sizeof(NodeAssign)); 
+                node_assign->lvalue = lvalue;
+                node_assign->string = string; 
+                Node *node = generate_node(AST_ASSIGNMENT, node_assign); 
+                queue_enqueue(stmt_list->stmts, node); 
+                match(TOK_SEMICOLON); 
+            // id, number, (, - sollte im folgenden gematched werden
+            } else {
+                expr_queue_state = queue_new(); 
+                parse_expr(); 
+                struct NExpr *expr = shunting_yard();
+                match(TOK_SEMICOLON);
+                NodeAssign *node_assign = malloc(sizeof(NodeAssign));
+                node_assign->expr = expr;
+                node_assign->lvalue = lvalue;
+                Node *node = generate_node(AST_ASSIGNMENT, node_assign);
+                queue_enqueue(stmt_list->stmts, node);
+            }
         break;
         default:
             syntax_error(TOK_ID); 
@@ -739,4 +789,36 @@ void syntax_error(int token_expected) {
 }
 
 
- 
+char * string_replace(char *search, char *replace, char *string) {
+	char *tempString, *searchStart;
+	int len=0;
+    
+    
+	// preuefe ob Such-String vorhanden ist
+	searchStart = strstr(string, search);
+	if(searchStart == NULL) {
+		return string;
+	}
+    
+	// Speicher reservieren
+	tempString = (char*) malloc(strlen(string) * sizeof(char));
+	if(tempString == NULL) {
+		return NULL;
+	}
+    
+	strcpy(tempString, string);
+    
+	len = searchStart - string;
+	string[len] = '\0';
+    
+	strcat(string, replace);
+    
+	len += strlen(search);
+	strcat(string, (char*)tempString+len);
+    
+	// Speicher freigeben 
+	free(tempString);
+	
+	return string;
+} 
+
