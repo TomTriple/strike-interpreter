@@ -68,7 +68,7 @@ Token *scanner() {
                 }
                 break;
             case SC_IN_ID: 
-                if(c == ' ' || c == '=') {
+                if(c == ' ' || c == '=' || c == ';') {
                     ungetc(c, fp); 
                     state = SC_ID_END;
                 } else if(isalpha(c)) { 
@@ -77,17 +77,39 @@ Token *scanner() {
                 }
                 break; 
             case SC_ID_END: 
-                token->tok_type = TOK_ID; 
-                token->lexem_one = lexem; 
-                token->line = line; 
-                token->row = row; 
+                if(strcmp(lexem, "pp") == 0) {
+                    token->tok_type = TOK_P; 
+                    token->lexem_one = lexem; 
+                    token->line = line; 
+                    token->row = row;         
+                } else if(strcmp(lexem, "iis") == 0) {
+                    token->tok_type = TOK_IS; 
+                    token->lexem_one = lexem; 
+                    token->line = line; 
+                    token->row = row;                    
+                } else {
+                    token->tok_type = TOK_ID; 
+                    token->lexem_one = lexem; 
+                    token->line = line; 
+                    token->row = row; 
+                }
                 return token;
             case SC_EQ_END:
-                token->tok_type = TOK_EQ; 
-                token->line = line; 
-                token->row = row; 
-                return token; 
-                break; 
+                if(next_char() == '=') {
+                    concat_to_lexem(); 
+                    token->lexem_one = lexem; 
+                    token->tok_type = TOK_CMP; 
+                    token->line = line; 
+                    token->row = row; 
+                    return token;                     
+                } else {
+                    token->tok_type = TOK_EQ; 
+                    token->line = line; 
+                    token->row = row; 
+                    return token;                 
+                }
+
+            break; 
             case SC_BINOP_END:
                 token->tok_type = TOK_BINOP; 
                 token->lexem_one = lexem; 
@@ -184,7 +206,18 @@ char *tok_type_tostring(int tok_type) {
             break; 
         case TOK_PAREN_CLOSE:
             result =  "TOK_PAREN_CLOSE";
-            break;             
+            break;   
+        case TOK_P:
+            result =  "TOK_P";
+            break;  
+        case TOK_IS:
+            result =  "TOK_IS";
+            break;      
+        case TOK_CMP:
+            result =  "TOK_CMP";
+            break;              
+        default:
+            printf("error, no token description available");
     }
     
     return result; 
@@ -205,11 +238,13 @@ static void concat_to_lexem() {
 
 static char next_char() {
     c = fgetc(fp);
+    // printf("--> %c\n", c); 
     row++;
     if(c == EOF) {
         fclose(fp); 
     } else if(c == '\n') {
         line++; 
+        return next_char(); 
     }
     return c; 
 }

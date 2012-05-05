@@ -8,11 +8,22 @@
 
 
 http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm
- 
- 
-S ::= Prog$
-Prog ::= id = E;
 
+
+
+Informal grammar:
++++++++++++++ 
+S ::= STMT_LIST$
+STMT_LIST ::= STMT STMT_LIST | EPSILON 
+STMT ::= id = E;
+STMT ::= p EX;
+STMT ::= is EX ( stmt_list )
+
+EX ::= E cmp E 
+ 
+
+Expressions:
++++++++++++++
 E --> P A
 A -> BPA | Epsilon
 P --> V | "(" E ")" | U P
@@ -22,7 +33,7 @@ V = id | number
 
 FIRST(E) = id number ( - 
 FIRST(A) = Epsilon + - * / ^
-FOLLOW(A) = TOK_SEMICOLON, TOK_PAREN_CLOSE  
+FOLLOW(A) = TOK_SEMICOLON, TOK_PAREN_OPEN, TOK_CMP  
 FIRST(P) = id number ( - 
 FIRST(B) = + - * / ^ 
 FIRST(U) = - 
@@ -38,14 +49,67 @@ FIRST(V) = id number
 #include "stack.h"
 #include <string.h> 
 #include <assert.h> 
+#include "hash_table.h"
 
+// constants associativity 
 #define LEFT 0
 #define RIGHT 1
+
+enum types {
+    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP
+    };
 
 struct Binary {
     short sentinel;
     Token *token; 
 }; 
+
+
+// the current lookahead-terminal
+static Token *lookahead;
+
+
+// nodes needed for evaluation of expressions
+struct NExpr {
+    struct Binary *operator; 
+    struct NExpr *left;
+    struct NExpr *right;
+    Token *value;
+};
+struct NAssignment {
+    Token *lvalue;
+    int rvalue;
+};
+
+
+// AST nodes
+typedef struct {
+    int type;
+    void *ref;
+} Node;
+
+typedef struct {
+    Token *lvalue;
+    struct NExpr *expr; 
+} NodeAssign;
+
+typedef struct {
+    struct NExpr *expr;
+} NodePrint;
+
+typedef struct {
+    Token *cmp;
+    struct NExpr *expr1;
+    struct NExpr *expr2;
+    Node *then;
+} NodeCmp;
+
+typedef struct {
+    QHandle *stmts;
+} NodeStmtList;
+
+
+
 
 void syntax_error(int tok);
 Token *consume_token(void); 
@@ -53,14 +117,17 @@ void match(int token);
 void test_tokens(void); 
 
 void parse_start(void);
-void parse_program(void);
+void parse_stmt_list(NodeStmtList *stmt_list); 
+void parse_assignment(NodeStmtList *stmt_list);
+void parse_print(NodeStmtList *stmt_list); 
+void parse_is(NodeStmtList *stmt_list);
 void parse_expr(void);
 void parse_a(void); 
 void parse_p(void); 
 void parse_b(void); 
 void parse_u(void);
 void parse_v(void); 
-void shunting_yard(void); 
+struct NExpr *shunting_yard(void); 
 short prec_for_binop(struct Binary *binary);
 short assoc_for_binop(struct Binary *binary); 
 void stack_test_callback(void *it); 
@@ -69,41 +136,20 @@ struct NExpr *make_node(struct Binary *binary, struct NExpr *e0, struct NExpr *e
 void push_operator(struct Binary *binary, SHandle *operators, SHandle *operands); 
 void pop_operator(SHandle *operators, SHandle *operands);
 struct Binary *make_binary(short is_sentinel, Token *token); 
-int interpret(struct NExpr *expr); 
+int interpret_expr(struct NExpr *expr); 
 void debug_expr_ast(struct NExpr *expr);
+void interpret_node(Node *node); 
 
 
 
-
-
-// the current lookahead-terminal
-static Token *lookahead; 
-
-
-// nodes for the AST
-
-struct NExpr {
-    struct Binary *operator; 
-    struct NExpr *left;
-    struct NExpr *right;
-    Token *value;
-};
-
-struct NAssignment {
-    Token *lvalue;
-    struct NExpr *rvalue;
-};
-
-
-
-
-// root-node of the program
-struct NAssignment root;
+// toplevel statements 
+Node *toplevel;
 
 // state of the queue which is used as input for shunting yard
 QHandle *expr_queue_state;
 
-
+// symbol table 
+HState *symtab;
 
 
 int main(int argc, char **args) { 
@@ -112,12 +158,19 @@ int main(int argc, char **args) {
     
     init_scanner(source);
     
-    // test_tokens();
-    // exit(0);
+    //test_tokens();
+    // exit(0); 
     
+    NodeStmtList *stmt_list = (NodeStmtList *) malloc(sizeof(NodeStmtList));
+    stmt_list->stmts = queue_new();    
+    toplevel = malloc(sizeof(Node));
+    toplevel->type = AST_STMT_LIST;
+    toplevel->ref = stmt_list;
+
+    symtab = hash_new(); 
     consume_token();
     parse_start();
-    printf("syntax ok\n");
+    printf("\nsyntax ok\n");
 
     return EXIT_SUCCESS; 
 
@@ -176,7 +229,7 @@ short assoc_for_binop(struct Binary *binary) {
 
 
 
-void shunting_yard() {
+struct NExpr *shunting_yard() { 
 
     /*
     // TEST-SUITE, Queue 
@@ -239,7 +292,7 @@ void shunting_yard() {
     SHandle *operators = stack_new();
     SHandle *operands = stack_new();
 
-    stack_push(operators, make_binary(1, NULL));
+    stack_push(operators, make_binary(1, NULL)); // == sentinel  
     input = queue_dequeue(expr_queue_state); 
     stack_push(operands, make_leaf(input));
     
@@ -257,9 +310,10 @@ void shunting_yard() {
     }
     
     struct NExpr *tos = stack_top(operands); 
-    printf("result: %i", interpret(tos));
-    // debug_expr_ast(tos); 
-    
+    return (tos); 
+    // printf("result: %i", interpret(tos));
+    // debug_expr_ast(tos);
+
 }
 
 
@@ -275,22 +329,22 @@ struct Binary *make_binary(short is_sentinel, Token *token) {
 
 
 
-int interpret(struct NExpr *expr) {
+int interpret_expr(struct NExpr *expr) {
     if(expr->value != NULL) {
         return atoi(expr->value->lexem_one); 
     } else {
         switch (expr->operator->token->lexem_one[0]) {
             case '+':
-                return interpret(expr->left) + interpret(expr->right); 
+                return interpret_expr(expr->left) + interpret_expr(expr->right); 
                 break;
             case '-':
-                return interpret(expr->left) - interpret(expr->right); 
+                return interpret_expr(expr->left) - interpret_expr(expr->right); 
                 break;
             case '*':
-                return interpret(expr->left) * interpret(expr->right); 
+                return interpret_expr(expr->left) * interpret_expr(expr->right); 
                 break;
             case '/':
-                return interpret(expr->left) / interpret(expr->right); 
+                return interpret_expr(expr->left) / interpret_expr(expr->right); 
                 break;
         }
     }
@@ -312,6 +366,9 @@ void debug_expr_ast(struct NExpr *expr) {
 
 struct NExpr *make_leaf(Token *tok) {
     struct NExpr *leaf = (struct NExpr *) malloc(sizeof(struct NExpr));  
+    if(NULL == leaf) {
+        printf("mem error make_leaf");
+    }
     leaf->value = tok; 
     return leaf; 
 }
@@ -319,13 +376,16 @@ struct NExpr *make_leaf(Token *tok) {
 
 struct NExpr *make_node(struct Binary *binary, struct NExpr *e0, struct NExpr *e1) {
     struct NExpr *node = (struct NExpr *) malloc(sizeof(struct NExpr));
+    if(NULL == node) {
+        printf("mem error make_node"); 
+    }
     node->left = e0;
     node->right = e1; 
     node->operator = binary;
     return node;
 }
 
-    
+
 void push_operator(struct Binary *binary, SHandle *operators, SHandle *operands) {
     struct Binary *top; 
     while (prec_for_binop((top = stack_top(operators))) > prec_for_binop(binary) || (assoc_for_binop(top) == LEFT && prec_for_binop(top) == prec_for_binop(binary))) {
@@ -351,31 +411,160 @@ void stack_test_callback(void *it) {
 }
 
 
-void parse_start() {
+void interpret_node(Node *node) {
+
+    NodeStmtList *stmt_list;
+    NodePrint *print;
+    NodeAssign *assign;
+    NodeCmp *cmp;
+    Node *current;
     
-    switch (lookahead->tok_type) {
-        case TOK_ID:
-            parse_program(); 
-            match(TOK_TERMINATE); 
+    switch (node->type) {
+        case AST_STMT_LIST:
+            stmt_list = node->ref; 
+            while ((current = queue_dequeue(stmt_list->stmts)) != NULL) {
+                interpret_node(current);
+            }
+        break;
+        case AST_PRINT:
+            print = (NodePrint *) node->ref;
+            printf("ast_print: %i \n", interpret_expr(print->expr)); 
+        break;
+        case AST_ASSIGNMENT:
+            assign = node->ref;
+            // hier rumgecaste besser verstehen!!!!!
+            hash_add(symtab, assign->lvalue->lexem_one, interpret_expr(assign->expr));
+            int result = hash_lookup(symtab, assign->lvalue->lexem_one);
+            printf("ast_assignment: %i \n", result);
+        break; 
+        case AST_CMP:
+            cmp = node->ref; 
+            if(strcmp("==", cmp->cmp->lexem_one) == 0) {
+                if (interpret_expr(cmp->expr1) == interpret_expr(cmp->expr2)) {
+                    interpret_node(cmp->then); 
+                }
+            }
         break;
         default:
-            syntax_error(TOK_ID); 
-    }
-
+            break;
+    } 
 }
 
 
-void parse_program() {
+Node *generate_node(int type, void *ref) {
+    Node *node = (Node *) malloc(sizeof(Node));
+    if(NULL == node)
+        printf("mem error at generate_node");
+    node->type = type;
+    node->ref = ref;
+    return node; 
+}
 
+
+void parse_start() {
+    parse_stmt_list(toplevel->ref);
+    match(TOK_TERMINATE); 
+    // AST creation finished! 
+    interpret_node(toplevel); 
+}
+
+
+
+void parse_stmt_list(NodeStmtList *stmt_list) {
     switch (lookahead->tok_type) {
         case TOK_ID:
-            root.lvalue = lookahead;
+            parse_assignment(stmt_list);
+            parse_stmt_list(stmt_list); 
+            break;
+        case TOK_P:
+            parse_print(stmt_list);
+            parse_stmt_list(stmt_list);
+        break;
+        case TOK_IS:
+            parse_is(stmt_list);
+            parse_stmt_list(stmt_list);
+        break;
+        case TOK_PAREN_CLOSE:
+        case TOK_TERMINATE:
+            
+        break;
+        default:
+            printf("error, tok_type is %s \n", tok_type_tostring(lookahead->tok_type)); 
+    }
+}
+
+
+void parse_is(NodeStmtList *stmt_list) {
+
+    switch (lookahead->tok_type) {
+        case TOK_IS:
+            match(TOK_IS);
+            expr_queue_state = queue_new();
+            parse_expr();
+            struct NExpr *expr1 = shunting_yard();
+            Token *token_cmp = lookahead;
+            match(TOK_CMP);
+            expr_queue_state = queue_new();
+            parse_expr();
+            struct NExpr *expr2 = shunting_yard();
+            match(TOK_PAREN_OPEN);
+            
+            NodeCmp *node_cmp = malloc(sizeof(NodeCmp));
+            node_cmp->cmp = token_cmp;
+            node_cmp->expr1 = expr1;
+            node_cmp->expr2 = expr2;
+            NodeStmtList *then_stmt_list = malloc(sizeof(NodeStmtList));
+            then_stmt_list->stmts = queue_new();
+            Node *then = generate_node(AST_STMT_LIST, then_stmt_list);
+            node_cmp->then = then;
+            Node *node = generate_node(AST_CMP, node_cmp); 
+            parse_stmt_list(then_stmt_list); 
+            queue_enqueue(stmt_list->stmts, node);
+            match(TOK_PAREN_CLOSE);
+        break;
+        default:
+            printf("error parse_is...");
+    }
+    
+}
+
+
+void parse_print(NodeStmtList *stmt_list) {
+    switch (lookahead->tok_type) {
+        case TOK_P:
+            match(TOK_P);
+            expr_queue_state = queue_new(); 
+            parse_expr(); 
+            struct NExpr *expr = shunting_yard(); 
+            match(TOK_SEMICOLON); 
+            NodePrint *node_print = (NodePrint *) malloc(sizeof(NodePrint)); 
+            node_print->expr = expr; 
+            Node *node = generate_node(AST_PRINT, node_print);
+            queue_enqueue(stmt_list->stmts, node); 
+            break; 
+        default:
+            break;
+    }
+}
+
+
+void parse_assignment(NodeStmtList *stmt_list) {
+
+    Token *lvalue;
+    switch (lookahead->tok_type) {
+        case TOK_ID:
+            lvalue = lookahead; 
             match(TOK_ID); 
             match(TOK_EQ); 
             expr_queue_state = queue_new(); 
             parse_expr(); 
-            shunting_yard();
-            match(TOK_SEMICOLON); 
+            struct NExpr *expr = shunting_yard();
+            match(TOK_SEMICOLON);
+            NodeAssign *node_assign = malloc(sizeof(NodeAssign));
+            node_assign->expr = expr;
+            node_assign->lvalue = lvalue;
+            Node *node = generate_node(AST_ASSIGNMENT, node_assign);
+            queue_enqueue(stmt_list->stmts, node);  
         break;
         default:
             syntax_error(TOK_ID); 
@@ -406,7 +595,7 @@ void parse_expr() {
 // Exp-Operator ^ noch nicht implementiert!!
 // A -> BPA | Epsilon
 // FIRST(A) = + - * / ^ Epsilon
-// FOLLOW(A) = TOK_SEMICOLON, TOK_PAREN_CLOSE
+// FOLLOW(A) = TOK_SEMICOLON, TOK_PAREN_OPEN, TOK_CMP
 void parse_a() {
         
     switch (lookahead->tok_type) {
@@ -416,7 +605,8 @@ void parse_a() {
             parse_a(); // rechtsrekursiver aufruf
         break;
         case TOK_SEMICOLON:
-        case TOK_PAREN_CLOSE:
+        case TOK_PAREN_OPEN:
+        case TOK_CMP:
             // Epsilon-Produktion d.h. lookahead nicht in FIRST(a), daher muss es in FOLLOW(a) in gültigem Satz sein
             // Epsilon ist letztes Symbol der rechtsrekursiven Aufrufe
         break;
