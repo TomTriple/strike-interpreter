@@ -96,7 +96,12 @@ Token *scanner() {
                     token->tok_type = TOK_IS; 
                     token->lexem_one = lexem; 
                     token->line = line; 
-                    token->row = row;                    
+                    token->row = row;
+                } else if(strcmp(lexem, "ttimes") == 0) {
+                    token->tok_type = TOK_TIMES; 
+                    token->lexem_one = lexem; 
+                    token->line = line; 
+                    token->row = row;
                 } else {
                     token->tok_type = TOK_ID; 
                     token->lexem_one = lexem; 
@@ -235,6 +240,9 @@ char *tok_type_tostring(int tok_type) {
         case TOK_STRING:
             result = "TOK_STRING";
             break;
+        case TOK_TIMES:
+            result = "TOK_TIMES";
+            break;            
         default:
             printf("error, no token description available");
     }

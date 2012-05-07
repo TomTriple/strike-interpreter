@@ -45,6 +45,11 @@ void *queue_dequeue(struct QState *state) {
 }
 
 
+void queue_reset(struct QState *state) {
+    state->traversal = state->head; 
+}
+
+
 void queue_test(struct QState *state, void (*callback)(void *it)) {
     void *it;
     struct QState *initial_state = &(*state);

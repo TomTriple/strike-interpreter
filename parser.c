@@ -16,6 +16,7 @@ STMT_LIST ::= STMT STMT_LIST | EPSILON
 STMT ::= id = E | id = STRING;
 STMT ::= p EX; | p STRING;
 STMT ::= is EX ( stmt_list )
+STMT ::= times EXPR ( STMT_LIST )
 STRING ::= ""
  
 EX ::= E cmp E 
@@ -55,7 +56,7 @@ FIRST(V) = id number
 #define RIGHT 1
 
 enum types {
-    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP
+    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP,AST_TIMES
     };
 
 struct Binary {
@@ -106,10 +107,15 @@ typedef struct {
     Node *then;
 } NodeCmp;
 
+
 typedef struct {
     QHandle *stmts;
 } NodeStmtList;
 
+typedef struct {
+    struct NExpr *times;
+    Node *block;
+} NodeTimes;
 
 
 
@@ -124,6 +130,7 @@ void parse_assignment(NodeStmtList *stmt_list);
 void parse_print(NodeStmtList *stmt_list); 
 void parse_is(NodeStmtList *stmt_list);
 void parse_expr(void);
+void parse_times(NodeStmtList *stmt_list);
 void parse_a(void); 
 void parse_p(void); 
 void parse_b(void); 
@@ -430,6 +437,7 @@ void interpret_node(Node *node) {
     NodePrint *print;
     NodeAssign *assign;
     NodeCmp *cmp;
+    NodeTimes *times;
     Node *current;
     
     switch (node->type) {
@@ -484,6 +492,16 @@ void interpret_node(Node *node) {
                 }
             }
         break;
+        case AST_TIMES: 
+            times = node->ref;
+            int i;
+            int iter = interpret_expr(times->times);
+            NodeStmtList *stmts = times->block->ref;
+            for (i = 1; i <= iter; i++) {
+                interpret_node(times->block); 
+                queue_reset(stmts->stmts);  
+            }
+        break;
         default:
             break;
     } 
@@ -523,6 +541,10 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
             parse_is(stmt_list);
             parse_stmt_list(stmt_list);
         break;
+        case TOK_TIMES:
+            parse_times(stmt_list);
+            parse_stmt_list(stmt_list);
+        break;
         case TOK_PAREN_CLOSE:
         case TOK_TERMINATE:
             
@@ -530,6 +552,39 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
         default:
             printf("error, tok_type is %s \n", tok_type_tostring(lookahead->tok_type)); 
     }
+}
+
+
+void parse_times(NodeStmtList *stmt_list) {
+
+    switch (lookahead->tok_type) {
+        case TOK_TIMES:
+            
+            match(TOK_TIMES);
+            expr_queue_state = queue_new();
+            parse_expr();
+            struct NExpr *expr = shunting_yard(); 
+            match(TOK_PAREN_OPEN);
+
+            NodeStmtList *stmt_list_block = malloc(sizeof(NodeStmtList));
+            stmt_list_block->stmts = queue_new(); 
+            parse_stmt_list(stmt_list_block); 
+            Node *node_block = generate_node(AST_STMT_LIST, stmt_list_block);
+            
+            match(TOK_PAREN_CLOSE);
+            NodeTimes *node_times = malloc(sizeof(NodeTimes)); 
+            node_times->times = expr;
+            node_times->block = node_block;
+            
+            Node *n = generate_node(AST_TIMES, node_times); 
+            queue_enqueue(stmt_list->stmts, n);
+            
+            break;
+            
+        default:
+            break;
+    }
+    
 }
 
 

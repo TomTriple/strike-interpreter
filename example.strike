@@ -19,3 +19,14 @@ is result == 10 (
 
 >> innerVariable;
 >> "miau, miau mr. #{ccat}, is angry & hungry!!";
+
+
+
+count = 3;
+times 2 + count ( 
+    times 2 (
+        >> "you should see this 10 times...";
+    )
+)
+
+
