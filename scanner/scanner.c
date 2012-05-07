@@ -9,7 +9,7 @@
 enum ScannerStates {
     SC_START, SC_IN_ID, SC_ID_END, SC_EQ_END, SC_BINOP_END, SC_IN_NUMBER, SC_NUMBER_END, 
     SC_SEMICOLON_END, SC_TERMINATE, SC_PAREN_OPEN, SC_PAREN_CLOSE, SC_IN_STR, SC_END_STR, 
-    SC_FUNC_DEF
+    SC_FUNC_DEF, SC_FUNC_CALL
 };
 
 typedef unsigned State;
@@ -82,6 +82,10 @@ Token *scanner() {
                 if(c == ' ' || c == '=' || c == ';') {
                     ungetc(c, fp); 
                     state = SC_ID_END;
+                } else if(c == '(') {
+                    if (next_char() == ')') {
+                        state = state = SC_FUNC_CALL;
+                    }
                 } else if(isalpha(c) || c == '>') { 
                     concat_to_lexem(); 
                     next_char();
@@ -122,6 +126,13 @@ Token *scanner() {
                 token->line = line; 
                 token->row = row;   
                 return token;
+            break;
+            case SC_FUNC_CALL:
+                token->tok_type = TOK_FUNC_CALL;  
+                token->lexem_one = lexem; 
+                token->line = line; 
+                token->row = row;   
+                return token;                
             break;
             case SC_EQ_END:
                 if(next_char() == '=') {
@@ -260,6 +271,9 @@ char *tok_type_tostring(int tok_type) {
         case TOK_FUNC_DEF:
             result = "TOK_FUNC_DEF"; 
         break;
+        case TOK_FUNC_CALL:
+            result = "TOK_FUNC_CALL"; 
+            break;            
         default:
             printf("error, no token description available");
     }

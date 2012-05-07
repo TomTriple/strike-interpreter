@@ -58,7 +58,7 @@ FIRST(V) = id number
 #define RIGHT 1
 
 enum types {
-    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP,AST_TIMES, AST_FUNC_DEF
+    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP,AST_TIMES, AST_FUNC_DEF, AST_FUNC_CALL
     };
 
 struct Binary {
@@ -125,6 +125,10 @@ typedef struct {
     Node *body;
 } NodeFuncDef;
 
+typedef struct {
+    Token *id;
+} NodeFuncCall;
+
 
 
 
@@ -141,6 +145,7 @@ void parse_is(NodeStmtList *stmt_list);
 void parse_expr(void);
 void parse_times(NodeStmtList *stmt_list);
 void parse_func_def(NodeStmtList *stmt_list);
+void parse_func_call(NodeStmtList *stmt_list); 
 void parse_a(void); 
 void parse_p(void); 
 void parse_b(void); 
@@ -182,8 +187,8 @@ int main(int argc, char **args) {
     
     init_scanner(source);
     
-    //test_tokens(); 
-    //exit(0);  
+    // test_tokens(); 
+    // exit(0);  
     
     NodeStmtList *stmt_list = (NodeStmtList *) malloc(sizeof(NodeStmtList));
     stmt_list->stmts = queue_new();    
@@ -455,6 +460,7 @@ void interpret_node(Node *node) {
     NodeCmp *cmp;
     NodeTimes *times;
     NodeFuncDef *func_def;
+    NodeFuncCall *func_call;    
     Node *current;
     
     switch (node->type) {
@@ -520,8 +526,17 @@ void interpret_node(Node *node) {
             }
         break;
         case AST_FUNC_DEF:
-            func_def = node->ref;
+            func_def = node->ref; 
             hash_add(symtab_funcs, func_def->id->lexem_one, func_def);
+        break;
+        case AST_FUNC_CALL:
+            func_call = node->ref;
+            NodeFuncDef *func_def = hash_lookup(symtab_funcs, func_call->id->lexem_one);
+            if(func_def == NULL) {
+                printf("sematic error - trying to call non-existant function"); 
+                exit(EXIT_FAILURE);
+            }
+            interpret_node(func_def->body); 
         break;
         default:
             break;
@@ -570,6 +585,10 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
             parse_func_def(stmt_list);
             parse_stmt_list(stmt_list); 
         break;
+        case TOK_FUNC_CALL:
+            parse_func_call(stmt_list);
+            parse_stmt_list(stmt_list);             
+        break;
         case TOK_PAREN_CLOSE:
         case TOK_TERMINATE:
             
@@ -577,6 +596,28 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
         default:
             printf("error, tok_type is %s \n", tok_type_tostring(lookahead->tok_type)); 
     }
+}
+
+
+void parse_func_call(NodeStmtList *stmt_list) {
+
+    Token *id;
+    
+    switch (lookahead->tok_type) {
+        case TOK_FUNC_CALL:
+            id = lookahead;
+            match(TOK_FUNC_CALL); 
+            NodeFuncCall *node_call = malloc(sizeof(NodeFuncCall)); 
+            node_call->id = id; 
+            Node *node = generate_node(AST_FUNC_CALL, node_call); 
+            queue_enqueue(stmt_list->stmts, node);
+            match(TOK_SEMICOLON);
+        break;
+            
+        default:
+            break;
+    }
+    
 }
 
 

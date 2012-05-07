@@ -10,6 +10,7 @@ FEATURES
 - infix to AST transformation of mathematical expressions using shunting yard algorithm. 
 - is statement for branching
 - times statement for iteration
+- defining and calling functions (currently only as procedures with side effects not "pure" funtions)
 - printing to the console
 
 More: "example.strike" 

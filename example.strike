@@ -18,23 +18,32 @@ is result == 10 (
 )
 
 >> innerVariable;
->> "miau, miau mr. #{ccat}, is angry & hungry!!";
+>> "miau, miau #{ccat}, is angry & hungry!!";
 
 
 
-count = 3;
-times 2 + count ( 
-    times 2 (
+count = 1;
+times 1 + count ( 
+    times 3 (
         >> "you´ll see this 10 times...";
     )
 )
 
 
-def fun (
-    >> "hello from a function call!";
+
+def funny (
+    times 3 (
+        >> "what a funny function";        
+    )
 )
 
+def serious (
+    >> "this is serious stuff!";
+)
 
+funny();
+serious();
+error(); 
 
 
 
