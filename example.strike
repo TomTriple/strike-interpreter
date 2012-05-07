@@ -25,8 +25,16 @@ is result == 10 (
 count = 3;
 times 2 + count ( 
     times 2 (
-        >> "you should see this 10 times...";
+        >> "you´ll see this 10 times...";
     )
 )
+
+
+def fun (
+    >> "hello from a function call!";
+)
+
+
+
 
 

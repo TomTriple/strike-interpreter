@@ -8,7 +8,8 @@
 
 enum ScannerStates {
     SC_START, SC_IN_ID, SC_ID_END, SC_EQ_END, SC_BINOP_END, SC_IN_NUMBER, SC_NUMBER_END, 
-    SC_SEMICOLON_END, SC_TERMINATE, SC_PAREN_OPEN, SC_PAREN_CLOSE, SC_IN_STR, SC_END_STR
+    SC_SEMICOLON_END, SC_TERMINATE, SC_PAREN_OPEN, SC_PAREN_CLOSE, SC_IN_STR, SC_END_STR, 
+    SC_FUNC_DEF
 };
 
 typedef unsigned State;
@@ -102,13 +103,26 @@ Token *scanner() {
                     token->lexem_one = lexem; 
                     token->line = line; 
                     token->row = row;
-                } else {
+                } else if(strcmp(lexem, "ddef") == 0) {
+                    token->tok_type = TOK_FUNC_DEF; 
+                    token->lexem_one = lexem; 
+                    token->line = line; 
+                    token->row = row;
+                } else { 
                     token->tok_type = TOK_ID; 
                     token->lexem_one = lexem; 
                     token->line = line; 
                     token->row = row; 
                 }
                 return token;
+            break;
+            case SC_FUNC_DEF:
+                token->tok_type = TOK_FUNC_DEF;
+                token->lexem_one = lexem; 
+                token->line = line; 
+                token->row = row;   
+                return token;
+            break;
             case SC_EQ_END:
                 if(next_char() == '=') {
                     concat_to_lexem(); 
@@ -242,7 +256,10 @@ char *tok_type_tostring(int tok_type) {
             break;
         case TOK_TIMES:
             result = "TOK_TIMES";
-            break;            
+            break;   
+        case TOK_FUNC_DEF:
+            result = "TOK_FUNC_DEF"; 
+        break;
         default:
             printf("error, no token description available");
     }

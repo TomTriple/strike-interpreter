@@ -14,9 +14,11 @@ Informal grammar:
 S ::= STMT_LIST$
 STMT_LIST ::= STMT STMT_LIST | EPSILON 
 STMT ::= id = E | id = STRING;
-STMT ::= p EX; | p STRING;
+STMT ::= def();
+STMT ::= >> EX; | >> STRING; | >> def()
 STMT ::= is EX ( stmt_list )
 STMT ::= times EXPR ( STMT_LIST )
+STMT ::= def ID1 ID2 IDn ( STMT_LIST ) 
 STRING ::= ""
  
 EX ::= E cmp E 
@@ -56,7 +58,7 @@ FIRST(V) = id number
 #define RIGHT 1
 
 enum types {
-    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP,AST_TIMES
+    AST_STMT_LIST, AST_ASSIGNMENT, AST_PRINT, AST_IS, AST_CMP,AST_TIMES, AST_FUNC_DEF
     };
 
 struct Binary {
@@ -117,6 +119,13 @@ typedef struct {
     Node *block;
 } NodeTimes;
 
+typedef struct {
+    Token *id;
+    HState *local_sym;
+    Node *body;
+} NodeFuncDef;
+
+
 
 
 void syntax_error(int tok);
@@ -131,6 +140,7 @@ void parse_print(NodeStmtList *stmt_list);
 void parse_is(NodeStmtList *stmt_list);
 void parse_expr(void);
 void parse_times(NodeStmtList *stmt_list);
+void parse_func_def(NodeStmtList *stmt_list);
 void parse_a(void); 
 void parse_p(void); 
 void parse_b(void); 
@@ -148,7 +158,7 @@ struct Binary *make_binary(short is_sentinel, Token *token);
 int interpret_expr(struct NExpr *expr); 
 void debug_expr_ast(struct NExpr *expr);
 void interpret_node(Node *node); 
-char * string_replace(char *search, char *replace, char *string);
+char *string_replace(char *search, char *replace, char *string);
 
 
 
@@ -158,8 +168,13 @@ Node *toplevel;
 // state of the queue which is used as input for shunting yard
 QHandle *expr_queue_state;
 
-// symbol table 
+
+// TODO: collect symbols in an "environment-thing" 
+// symbol table for variables
 HState *symtab;
+
+// symbol tables for functions
+HState *symtab_funcs;
 
 int main(int argc, char **args) { 
         
@@ -167,8 +182,8 @@ int main(int argc, char **args) {
     
     init_scanner(source);
     
-    // test_tokens(); 
-    // exit(0); 
+    //test_tokens(); 
+    //exit(0);  
     
     NodeStmtList *stmt_list = (NodeStmtList *) malloc(sizeof(NodeStmtList));
     stmt_list->stmts = queue_new();    
@@ -176,7 +191,8 @@ int main(int argc, char **args) {
     toplevel->type = AST_STMT_LIST;
     toplevel->ref = stmt_list;
 
-    symtab = hash_new(); 
+    symtab = hash_new();
+    symtab_funcs = hash_new(); 
     consume_token();
     parse_start();
     printf("\nsyntax ok\n");
@@ -438,6 +454,7 @@ void interpret_node(Node *node) {
     NodeAssign *assign;
     NodeCmp *cmp;
     NodeTimes *times;
+    NodeFuncDef *func_def;
     Node *current;
     
     switch (node->type) {
@@ -502,6 +519,10 @@ void interpret_node(Node *node) {
                 queue_reset(stmts->stmts);  
             }
         break;
+        case AST_FUNC_DEF:
+            func_def = node->ref;
+            hash_add(symtab_funcs, func_def->id->lexem_one, func_def);
+        break;
         default:
             break;
     } 
@@ -545,6 +566,10 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
             parse_times(stmt_list);
             parse_stmt_list(stmt_list);
         break;
+        case TOK_FUNC_DEF:
+            parse_func_def(stmt_list);
+            parse_stmt_list(stmt_list); 
+        break;
         case TOK_PAREN_CLOSE:
         case TOK_TERMINATE:
             
@@ -552,6 +577,37 @@ void parse_stmt_list(NodeStmtList *stmt_list) {
         default:
             printf("error, tok_type is %s \n", tok_type_tostring(lookahead->tok_type)); 
     }
+}
+
+
+void parse_func_def(NodeStmtList *stmt_list) {
+
+    switch (lookahead->tok_type) {
+        case TOK_FUNC_DEF:
+            match(TOK_FUNC_DEF);
+            NodeFuncDef *node_fun = malloc(sizeof(NodeFuncDef)); 
+            node_fun->local_sym = hash_new();
+            node_fun->id = lookahead;
+            match(TOK_ID);
+            while (lookahead->tok_type != TOK_PAREN_OPEN) {
+                hash_add(node_fun->local_sym, lookahead->lexem_one, NULL);
+                match(TOK_ID);
+            }
+            match(TOK_PAREN_OPEN); 
+            NodeStmtList *node_fun_block = malloc(sizeof(NodeStmtList)); 
+            node_fun_block->stmts = queue_new(); 
+            parse_stmt_list(node_fun_block); 
+            match(TOK_PAREN_CLOSE);
+            node_fun->body = generate_node(AST_STMT_LIST, node_fun_block); 
+            
+            Node *node = generate_node(AST_FUNC_DEF, node_fun); 
+            queue_enqueue(stmt_list->stmts, node);  
+        break;
+            
+        default:
+            break;
+    }
+    
 }
 
 
