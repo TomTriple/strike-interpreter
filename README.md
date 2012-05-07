@@ -8,7 +8,8 @@ FEATURES
 - integer and string variables
 - string interpolation
 - infix to AST transformation of mathematical expressions using shunting yard algorithm. 
-- if statements 
+- is statement for branching
+- times statement for iteration
 - printing to the console
 
 More: "example.strike" 
